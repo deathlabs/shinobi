@@ -44,3 +44,10 @@ advisories:
     impact_statement: The tarfile module is included in the Python standard library but this service does not use it or perform any kind of archive extraction.
     products:
       - pkg:apk/alpine/python3@3.14.7-r1
+  - vulnerability: CVE-2026-85091
+    status: not_affected
+    justification: vulnerable_code_not_in_execute_path
+    impact_statement: The zlib gz_vacate() overflow is only reachable via gzprintf() or gzvprintf() calls on a non-blocking gzwrite() handle. This service does not call these functions, does not vendor or statically link zlib, and does not access libz through ctypes/cffi. 
+    products:
+      - pkg:apk/alpine/zlib@1.3.2-r0
+  

@@ -308,3 +308,11 @@ redeploy-zarf-package: remove-zarf-package deploy
 .SILENT: update-uds-package
 update-uds-package:
 	uds zarf tools kubectl apply -f uds-package.yaml
+
+# ---------------------------------------------------------
+# Test the MCP server.
+# ---------------------------------------------------------
+.PHONY: tests
+.SILENT: tests
+tests:
+	cd tests && uv run python main.py
