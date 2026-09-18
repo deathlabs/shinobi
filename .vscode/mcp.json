@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "github": {
+      "type": "sse",
+      "url": "https://locahost/sse"
+    }
+  }
+}

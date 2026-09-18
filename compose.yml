@@ -1,0 +1,22 @@
+services:
+
+  tools:
+    profiles: [ all, tools, inference ]
+    build: tools
+    image: shinobi/tools:latest
+    container_name: shinobi-tools
+    ports:
+      - "8002:8002"
+    volumes:
+      - downloads:/home/shinobi/downloads
+    env_file:
+      - tools/.env
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8002/api/v1/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 2
+      start_period: 5s
+
+volumes:
+  downloads:
