@@ -1,14 +1,14 @@
 services:
 
   tools:
-    profiles: [ all, tools, inference ]
+    profiles: [ all, tools ]
     build: tools
     image: shinobi/tools:latest
     container_name: shinobi-tools
     ports:
       - "8002:8002"
     volumes:
-      - downloads:/home/shinobi/downloads
+      - shinobi-workspace:/home/tools/workspace
     env_file:
       - tools/.env
     healthcheck:
@@ -19,4 +19,4 @@ services:
       start_period: 5s
 
 volumes:
-  downloads:
+  shinobi-workspace:

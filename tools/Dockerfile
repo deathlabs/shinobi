@@ -12,8 +12,8 @@ RUN apk add --no-cache python3 git uv && \
     (apk del wget || true) &&\
     addgroup -g 1000 shinobi &&\
     adduser -D -G shinobi -u 1000 shinobi -h /home/tools/ &&\
-    mkdir -p /home/tools/downloads &&\
-    chmod ug+rwx,o+rx,g+s /home/tools/downloads &&\
+    mkdir -p /home/tools/workspace &&\
+    chmod ug+rwx,o+rx,g+s /home/tools/workspace &&\
     chown -R shinobi:shinobi /home/tools/
 ENV PATH="/home/tools/.venv/bin:$PATH"
 USER shinobi
