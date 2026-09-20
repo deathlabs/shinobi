@@ -31,21 +31,43 @@ def _detect_namespace(root: ElementTree.Element) -> str:
         uri = root.tag[1:].split("}", 1)[0]
         if uri in _SUPPORTED_NAMESPACES:
             return uri
+
     raise XccdfParseError(
         f"Unrecognized or missing XCCDF namespace on root element '{root.tag}'. "
         f"Supported namespaces: {_SUPPORTED_NAMESPACES}"
     )
 
 
+def _extract_vuln_discussion(description: str) -> str:
+    """Extract the vulnerability discussion from a DISA XCCDF description."""
+    start_tag = "<VulnDiscussion>"
+    end_tag = "</VulnDiscussion>"
+
+    if start_tag not in description:
+        return description.strip()
+
+    _, _, remainder = description.partition(start_tag)
+    discussion, separator, _ = remainder.partition(end_tag)
+
+    if not separator:
+        return description.strip()
+
+    return discussion.strip()
+
+
 def _extract_rule(
-    rule: ElementTree.Element, group_id: str | None, ns: dict
+    rule: ElementTree.Element,
+    group_id: str | None,
+    ns: dict,
 ) -> Requirement:
     title = rule.findtext("xccdf:title", default="", namespaces=ns)
     description = rule.findtext("xccdf:description", default="", namespaces=ns)
     fixtext = rule.findtext("xccdf:fixtext", default="", namespaces=ns)
     version = rule.findtext("xccdf:version", default="", namespaces=ns)
     check_content = rule.findtext(
-        "xccdf:check/xccdf:check-content", default="", namespaces=ns
+        "xccdf:check/xccdf:check-content",
+        default="",
+        namespaces=ns,
     )
 
     cci_refs = [
@@ -60,7 +82,7 @@ def _extract_rule(
         "version": version.strip(),
         "severity": rule.get("severity"),
         "title": title.strip(),
-        "description": description.strip(),
+        "description": _extract_vuln_discussion(description),
         "check": check_content.strip(),
         "fix": fixtext.strip(),
         "cci": cci_refs,
@@ -84,6 +106,7 @@ def read_xccdf_file(path: str) -> list[Requirement]:
             unsupported XCCDF namespace, or contains no rules.
     """
     xccdf_path = Path(path)
+
     if not xccdf_path.is_file():
         raise XccdfParseError(f"No such file: {path}")
 
@@ -101,6 +124,7 @@ def read_xccdf_file(path: str) -> list[Requirement]:
     # Rules nested inside Groups.
     for group in root.findall(".//xccdf:Group", ns):
         group_id = group.get("id")
+
         for rule in group.findall("xccdf:Rule", ns):
             requirements.append(_extract_rule(rule, group_id, ns))
 

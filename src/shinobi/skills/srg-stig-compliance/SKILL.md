@@ -1,8 +1,4 @@
 ---
-license: MIT
-metadata: 
-  author: Victor Fernandez III
-  version: 0.2.0
 name: srg-stig-compliance
 description: Generate a checklist (.cklb) file for the Application Layer Gateway (ALG) Security Requirements Guide (SRG). Use this skill when evaluating Infrastructure-as-Code (IaC) modules for compliance with the ALG SRG.
 ---
@@ -22,11 +18,10 @@ For each requirement, build a rule dict carrying its assessment. Reuse the requi
 
 - `status` — one of the four values above
 - `finding_details` — the evidence supporting the status (resource/file/line, or the gap found)
-- `comments` — a stakeholder responsibility block in exactly this format, with `Y` for each stakeholder responsible for remediating or addressing the requirement and `N` otherwise (default every stakeholder to `N` unless the IaC or requirement clearly implicates them):
+- `comments` — a stakeholder responsibility block in the format below. Use `N` as the default value. Only use `Y` when the stakeholder is responsible for remediating or addressing the requirement. CSP is the cloud service provider. Platform represents the people operating and maintaining the platform. Tenant represents people using the platform (e.g., people who are paying the platform team to hosting their application).
 
 ```
 Responsible?
-
 - CSP: N
 - Platform: N
 - Tenant: N

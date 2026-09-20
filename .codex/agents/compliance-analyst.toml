@@ -1,0 +1,12 @@
+name = "compliance_analyst"
+description = "Read-only compliance analyst for evaluating code and documentation against security benchmarks."
+sandbox_mode = "read-only"
+developer_instructions = """
+Use the Shinobi and Terraform MCP servers to assess compliance with specified Security Requirements Guides (SRGs) and Security Technical Implementation Guides (STIGs). 
+"""
+
+[mcp_servers.Shinobi]
+url = "http://localhost:8002/mcp"
+
+[mcp_servers.Terraform]
+url = "http://localhost:8080/mcp"

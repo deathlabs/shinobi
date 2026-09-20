@@ -964,7 +964,7 @@ wheels = [
 ]
 
 [[package]]
-name = "shinobi-tests"
+name = "shinobi-mcp-tests"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -2,11 +2,11 @@
 # Misc.
 # ---------------------------------------------------------
 
-# Use bash for recipe execution.
+# Use BASH as the default shell.
 SHELL := /bin/bash
 
-# Set the default goal.
-.DEFAULT_GOAL := redeploy-zarf-package
+# Set the default Make target.
+.DEFAULT_GOAL := build-and-start-container
 
 # Tell Docker Compose to use Bake for builds.
 export COMPOSE_BAKE := true
@@ -14,133 +14,109 @@ export COMPOSE_BAKE := true
 # Set the Docker Compose profile to "all" if one is not provided.
 DOCKER_COMPOSE_PROFILE ?= all
 
-# Centralize the Compose command so every target uses the same profile.
+# Set the host directory exposed to Shinobi as its workspace.
+WORKSPACE ?= $(CURDIR)
+
+# Normalize the workspace path and expose it to Docker Compose.
+SHINOBI_WORKSPACE := $(abspath $(WORKSPACE))
+export SHINOBI_WORKSPACE
+
+# Centralize the Compose command so every Make target uses the same profile.
 COMPOSE := docker compose --profile $(DOCKER_COMPOSE_PROFILE)
 
-# Ask Compose which services are active for the selected profile.
-COMPONENTS = $(shell $(COMPOSE) config --services)
+# Set the Docker Compose service to build and scan.
+SHINOBI_SERVICE := shinobi-mcp
 
-# Prefix used for generated SBOM file names.
+# Set the prefix used for SBOM file names.
 SBOM_PREFIX ?= shinobi
 
-# Django-specific configuration.
-DJANGO_SERVICE ?= backend
-DJANGO_SECRET_KEY ?= shinobi
-
-# VEX metadata.
+# Set VEX metadata.
 VEX_AUTHOR ?= Victor Fernandez III
 VEX_ID_BASE ?= shinobi
 
-# Security scanner configurations.
+# Set security scanner thresholds.
 SEMGREP_CONFIG ?= auto
 GRYPE_FAILURE_THRESHOLD ?= medium
 
-# Zarf configuration.
-ZARF_PACKAGE_NAME ?= shinobi
-ZARF_PACKAGE_VERSION ?= 0.1.0
-ZARF_PACKAGE_ARCH ?= amd64
-ZARF_PACKAGE_FILE ?= zarf-package-$(ZARF_PACKAGE_NAME)-$(ZARF_PACKAGE_ARCH)-$(ZARF_PACKAGE_VERSION).tar.zst
+# ---------------------------------------------------------
+# Validate the workspace folder exists.
+# ---------------------------------------------------------
+
+.PHONY: validate-workspace
+.SILENT: validate-workspace
+validate-workspace:
+	if [ ! -d "$(SHINOBI_WORKSPACE)" ]; then \
+		echo "ERROR: Workspace does not exist: $(SHINOBI_WORKSPACE)" >&2; \
+		exit 1; \
+	fi
 
 # ---------------------------------------------------------
-# Update uv.lock for each active Python component.
+# Update uv.lock.
 # ---------------------------------------------------------
 
 .PHONY: lock
 .SILENT: lock
 lock:
-	for COMPONENT in $(COMPONENTS); do \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].build.context // empty'); \
-		if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
-			echo "==> Locking $$COMPONENT ($$BUILD_CONTEXT)"; \
-			(cd "$$BUILD_CONTEXT" && uv lock); \
-		fi; \
-	done
-
-# ---------------------------------------------------------
-# Reset Django migrations when the Django service is active.
-# ---------------------------------------------------------
-
-.PHONY: migrations
-.SILENT: migrations
-migrations:
-	if echo " $(COMPONENTS) " | grep -q " $(DJANGO_SERVICE) "; then \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$(DJANGO_SERVICE)" '.services[$$SERVICE].build.context // empty'); \
-		if [ -n "$$BUILD_CONTEXT" ]; then \
-			echo "==> Resetting migrations for $(DJANGO_SERVICE) ($$BUILD_CONTEXT)"; \
-			find "$$BUILD_CONTEXT" \
-				-mindepth 3 -maxdepth 3 \
-				-path '*/migrations/*.py' \
-				! -name '__init__.py' \
-				-type f -delete; \
-			find "$$BUILD_CONTEXT" \
-				-mindepth 3 -maxdepth 3 \
-				-path '*/migrations/__pycache__' \
-				-type d -exec rm -rf {} +; \
-			(cd "$$BUILD_CONTEXT" && SECRET_KEY="$(DJANGO_SECRET_KEY)" uv run python manage.py makemigrations); \
-		fi; \
+	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
+	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
+		echo "==> Locking $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
+		(cd "$$BUILD_CONTEXT" && uv lock); \
 	fi
 
 # ---------------------------------------------------------
-# Check each active Python component for bugs.
+# Check the source code for bugs.
 # ---------------------------------------------------------
 
 .PHONY: check
 .SILENT: check
 check:
-	for COMPONENT in $(COMPONENTS); do \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].build.context // empty'); \
-		if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
-			echo "==> Checking $$COMPONENT ($$BUILD_CONTEXT)"; \
-			ruff check --fix --exclude migrations "$$BUILD_CONTEXT"; \
-		fi; \
-	done
+	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
+	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
+		echo "==> Checking $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
+		ruff check --fix --exclude migrations "$$BUILD_CONTEXT"; \
+	fi
 
 # ---------------------------------------------------------
-# Format each active Python component for consistency.
+# Format the source code.
 # ---------------------------------------------------------
 
 .PHONY: format
 .SILENT: format
 format:
-	for COMPONENT in $(COMPONENTS); do \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].build.context // empty'); \
-		if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
-			echo "==> Formatting $$COMPONENT ($$BUILD_CONTEXT)"; \
-			ruff format --exclude migrations "$$BUILD_CONTEXT"; \
-		fi; \
-	done
+	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
+	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
+		echo "==> Formatting $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
+		ruff format --exclude migrations "$$BUILD_CONTEXT"; \
+	fi
 
 # ---------------------------------------------------------
-# Check each active component's source code for vulnerabilities.
+# Check the source code for vulnerabilities.
 # ---------------------------------------------------------
 
 .PHONY: sast
 .SILENT: sast
 sast:
-	for COMPONENT in $(COMPONENTS); do \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].build.context // empty'); \
-		if [ -n "$$BUILD_CONTEXT" ] && [ -d "$$BUILD_CONTEXT" ]; then \
-			echo "==> Running SAST on $$COMPONENT ($$BUILD_CONTEXT)"; \
-			semgrep scan --config $(SEMGREP_CONFIG) "$$BUILD_CONTEXT"; \
-		fi; \
-	done
+	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
+	if [ -n "$$BUILD_CONTEXT" ] && [ -d "$$BUILD_CONTEXT" ]; then \
+		echo "==> Running SAST on $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
+		semgrep scan --config $(SEMGREP_CONFIG) "$$BUILD_CONTEXT"; \
+	fi
 
 # ---------------------------------------------------------
-# Build the active container images.
+# Build the container image.
 # ---------------------------------------------------------
 
 .PHONY: build-containers
 .SILENT: build-containers
-build-containers: lock migrations check format
-	$(COMPOSE) build
+build-containers: lock check format
+	$(COMPOSE) build $(SHINOBI_SERVICE)
 
 # ---------------------------------------------------------
-# Generate VEX statements for each active component.
+# Generate a VEX file for the container image.
 # ---------------------------------------------------------
 
 .PHONY: vex
@@ -174,96 +150,92 @@ endef
 export VEX_FILTER
 
 vex:
-	for COMPONENT in $(COMPONENTS); do \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].build.context // empty'); \
-		if [ -z "$$BUILD_CONTEXT" ]; then \
-			continue; \
-		fi; \
-		VEX_YAML_PATH="$$BUILD_CONTEXT/vex.yaml"; \
-		VEX_JSON_PATH="$$BUILD_CONTEXT/vex.json"; \
-		if [ -f "$$VEX_YAML_PATH" ]; then \
-			echo "==> Generating VEX for $$COMPONENT"; \
-			VEX_ID="$(VEX_ID_BASE)-$$COMPONENT-$$(date +%s)"; \
-			VEX_TIMESTAMP="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
-			if yq --version 2>&1 | grep -qi 'mikefarah'; then \
-				yq -o=json '.' "$$VEX_YAML_PATH"; \
-			else \
-				yq '.' "$$VEX_YAML_PATH"; \
-			fi | jq \
-				--arg VEX_ID "$$VEX_ID" \
-				--arg VEX_AUTHOR "$(VEX_AUTHOR)" \
-				--arg VEX_TIMESTAMP "$$VEX_TIMESTAMP" \
-				"$$VEX_FILTER" \
-				> "$$VEX_JSON_PATH"; \
+	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
+	if [ -z "$$BUILD_CONTEXT" ]; then \
+		echo "ERROR: $(SHINOBI_SERVICE) does not define a build context." >&2; \
+		exit 1; \
+	fi; \
+	VEX_YAML_PATH="$$BUILD_CONTEXT/vex.yaml"; \
+	VEX_JSON_PATH="$$BUILD_CONTEXT/vex.json"; \
+	if [ -f "$$VEX_YAML_PATH" ]; then \
+		echo "==> Generating VEX for $(SHINOBI_SERVICE)"; \
+		VEX_ID="$(VEX_ID_BASE)-$(SHINOBI_SERVICE)-$$(date +%s)"; \
+		VEX_TIMESTAMP="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+		if yq --version 2>&1 | grep -qi 'mikefarah'; then \
+			yq -o=json '.' "$$VEX_YAML_PATH"; \
 		else \
-			echo "==> No VEX file for $$COMPONENT; skipping"; \
-		fi; \
-	done
+			yq '.' "$$VEX_YAML_PATH"; \
+		fi | jq \
+			--arg VEX_ID "$$VEX_ID" \
+			--arg VEX_AUTHOR "$(VEX_AUTHOR)" \
+			--arg VEX_TIMESTAMP "$$VEX_TIMESTAMP" \
+			"$$VEX_FILTER" \
+			> "$$VEX_JSON_PATH"; \
+	else \
+		echo "==> No VEX file for $(SHINOBI_SERVICE); skipping"; \
+	fi
 
 # ---------------------------------------------------------
-# Generate SBOMs for each active component's container image.
+# Generate an SBOM for the container image.
 # ---------------------------------------------------------
 
 .PHONY: sbom
 .SILENT: sbom
 sbom: build-containers
-	for COMPONENT in $(COMPONENTS); do \
-		IMAGE_REF=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].image // empty'); \
-		SBOM_PATH="$(SBOM_PREFIX)-$$COMPONENT-sbom.json"; \
-		if [ -z "$$IMAGE_REF" ]; then \
-			echo "ERROR: Compose service $$COMPONENT does not define an image." >&2; \
-			exit 1; \
-		fi; \
-		echo "==> Generating SBOM for $$COMPONENT ($$IMAGE_REF)"; \
-		syft "$$IMAGE_REF" -o cyclonedx-json="$$SBOM_PATH"; \
-	done
+	IMAGE_REF=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].image // empty'); \
+	SBOM_PATH="$(SBOM_PREFIX)-sbom.json"; \
+	if [ -z "$$IMAGE_REF" ]; then \
+		echo "ERROR: Compose service $(SHINOBI_SERVICE) does not define an image." >&2; \
+		exit 1; \
+	fi; \
+	echo "==> Generating SBOM for $(SHINOBI_SERVICE) ($$IMAGE_REF)"; \
+	syft "$$IMAGE_REF" -o cyclonedx-json="$$SBOM_PATH"
 
 # ---------------------------------------------------------
-# Scan each active container image's dependencies for CVEs.
+# Scan the container image's dependencies for CVEs.
 # ---------------------------------------------------------
 
 .PHONY: dependency-scan
 .SILENT: dependency-scan
 dependency-scan: sbom vex
 	grype db update
-	for COMPONENT in $(COMPONENTS); do \
-		BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-			jq -r --arg SERVICE "$$COMPONENT" '.services[$$SERVICE].build.context // empty'); \
-		SBOM_PATH="$(SBOM_PREFIX)-$$COMPONENT-sbom.json"; \
-		VEX_JSON_PATH="$$BUILD_CONTEXT/vex.json"; \
-		echo "==> Scanning dependencies for $$COMPONENT"; \
-		if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$VEX_JSON_PATH" ]; then \
-			grype sbom:"$$SBOM_PATH" \
-				--vex "$$VEX_JSON_PATH" \
-				--fail-on $(GRYPE_FAILURE_THRESHOLD); \
-		else \
-			grype sbom:"$$SBOM_PATH" \
-				--fail-on $(GRYPE_FAILURE_THRESHOLD); \
-		fi; \
-	done
+	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
+		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
+	SBOM_PATH="$(SBOM_PREFIX)-sbom.json"; \
+	VEX_JSON_PATH="$$BUILD_CONTEXT/vex.json"; \
+	echo "==> Scanning dependencies for $(SHINOBI_SERVICE)"; \
+	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$VEX_JSON_PATH" ]; then \
+		grype sbom:"$$SBOM_PATH" \
+			--vex "$$VEX_JSON_PATH" \
+			--fail-on $(GRYPE_FAILURE_THRESHOLD); \
+	else \
+		grype sbom:"$$SBOM_PATH" \
+			--fail-on $(GRYPE_FAILURE_THRESHOLD); \
+	fi
 
 # ---------------------------------------------------------
-# Start the active containers.
+# Build and start the container.
 # ---------------------------------------------------------
 
-.PHONY: start-containers
-.SILENT: start-containers
-start-containers: dependency-scan
+.PHONY: build-and-start-container
+.SILENT: build-and-start-container
+build-and-start-container: validate-workspace dependency-scan
+	echo "==> Using workspace: $(SHINOBI_WORKSPACE)"
 	$(COMPOSE) up -d
 
 # ---------------------------------------------------------
-# Stop the containers.
+# Stop the container.
 # ---------------------------------------------------------
 
-.PHONY: stop-containers
-.SILENT: stop-containers
-stop-containers:
+.PHONY: stop-container
+.SILENT: stop-container
+stop-container:
 	$(COMPOSE) down
 
 # ---------------------------------------------------------
-# Check the status of the active containers.
+# Check the status of the container.
 # ---------------------------------------------------------
 
 .PHONY: status
@@ -272,46 +244,9 @@ status:
 	$(COMPOSE) ps --format "table {{.Name}}\t{{.Ports}}\t{{.Status}}"
 
 # ---------------------------------------------------------
-# Deploy the Zarf package.
+# Test the container.
 # ---------------------------------------------------------
 
-.PHONY: deploy
-.SILENT: deploy
-deploy: dependency-scan
-	uds zarf package create --confirm && \
-	uds zarf package deploy $(ZARF_PACKAGE_FILE) --confirm
-
-# ---------------------------------------------------------
-# Remove the Zarf package.
-# ---------------------------------------------------------
-
-.PHONY: remove-zarf-package
-.SILENT: remove-zarf-package
-remove-zarf-package:
-	uds zarf package remove $(ZARF_PACKAGE_NAME) --confirm || true && \
-	uds zarf tools kubectl delete namespace $(ZARF_PACKAGE_NAME) --ignore-not-found
-	# kubectl patch packages.uds.dev $(ZARF_PACKAGE_NAME) -n $(ZARF_PACKAGE_NAME) --type=merge -p '{"metadata":{"finalizers":[]}}'
-
-# ---------------------------------------------------------
-# Redeploy the Zarf package.
-# ---------------------------------------------------------
-
-.PHONY: redeploy-zarf-package
-.SILENT: redeploy-zarf-package
-redeploy-zarf-package: remove-zarf-package deploy
-
-# ---------------------------------------------------------
-# Update the UDS package.
-# ---------------------------------------------------------
-
-.PHONY: update-uds-package
-.SILENT: update-uds-package
-update-uds-package:
-	uds zarf tools kubectl apply -f uds-package.yaml
-
-# ---------------------------------------------------------
-# Test the MCP server.
-# ---------------------------------------------------------
 .PHONY: tests
 .SILENT: tests
 tests:
