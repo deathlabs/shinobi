@@ -5,9 +5,9 @@ Shinobi is an MCP server that exposes tools and skills that agents can use to ev
 
 ## Quickstart
 
-This section describes *one* way to get Shinobi up and running. These instructions assume you are using Windows Subsystem for Linux (WSL), VS Code, and OpenAI Codex. They also assume you have or will get the following software installed: [`make`](https://www.gnu.org/software/make/), [Docker](https://docs.docker.com/get-started/get-docker/), [Syft](https://github.com/anchore/syft#installation), [Grype](https://github.com/anchore/grypet#installation), [`jq`](https://jqlang.org/download/), [`yq`](https://github.com/mikefarah/yq), [VS Code](https://code.visualstudio.com/), and the [VS Code Extension for Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt&utm_source=gemini).
+This section describes **one** way to get Shinobi up and running. These instructions assume you are using Windows Subsystem for Linux (WSL), VS Code, and OpenAI Codex. They also assume you have or will get the following software installed: [`make`](https://www.gnu.org/software/make/), [Docker](https://docs.docker.com/get-started/get-docker/), [`uv`](https://docs.astral.sh/uv/), [Ruff](https://docs.astral.sh/ruff/), [Semgrep](https://semgrep.dev/), [TruffleHog](https://github.com/trufflesecurity/trufflehog), [Hadolint](https://github.com/hadolint/hadolint), [Syft](https://github.com/anchore/syft#installation), [Grype](https://github.com/anchore/grype#installation), [`yq`](https://github.com/mikefarah/yq), [VS Code](https://code.visualstudio.com/), and the [VS Code Extension for Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt).
 
-Syft and Grype were included in Shinobi's development workflow to help identify and reduce security risks introduced by Shinobi itself.
+Ruff, Semgrep, TruffleHog, Hadolint, Syft, and Grype are used in Shinobi's development workflow to help identify and reduce security risks introduced by Shinobi itself.
 
 **Again, WSL, VS Code, and OpenAI Codex are NOT required to use Shinobi. They are only relevant to this Quickstart.**
 

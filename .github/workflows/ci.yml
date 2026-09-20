@@ -86,5 +86,8 @@ jobs:
       - name: Add Grype to PATH
         run: echo "$(dirname '${{ steps.grype.outputs.cmd }}')" >> "$GITHUB_PATH"
 
+      - name: Configure Environment
+        run: cp src/.env.example src/.env
+
       - name: Run CI Pipeline
         run: make tests
