@@ -7,7 +7,7 @@ Shinobi is an MCP server that exposes tools and skills that agents can use to ev
 
 This section describes ***one*** way to get Shinobi up and running. 
 
-These instructions assume you are using Windows Subsystem for Linux (WSL), VS Code, and OpenAI's Codex agent. They also assume you have or will get the following software installed: [`make`](https://www.gnu.org/software/make/), [Docker](https://docs.docker.com/get-started/get-docker/), [`uv`](https://docs.astral.sh/uv/), [Ruff](https://docs.astral.sh/ruff/), [Semgrep](https://semgrep.dev/), [TruffleHog](https://github.com/trufflesecurity/trufflehog), [Hadolint](https://github.com/hadolint/hadolint), [Syft](https://github.com/anchore/syft#installation), [Grype](https://github.com/anchore/grype#installation), [`yq`](https://github.com/mikefarah/yq), [VS Code](https://code.visualstudio.com/), and the [VS Code Extension for Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt). Ruff, Semgrep, TruffleHog, Hadolint, Syft, and Grype are used in Shinobi's development workflow to help identify and reduce security risks introduced by Shinobi itself.
+These instructions assume you are using Windows Subsystem for Linux (WSL), VS Code, and OpenAI's Codex agent. They also assume you have or will get the following software installed: [Make](https://www.gnu.org/software/make/), [Docker](https://docs.docker.com/get-started/get-docker/), [uv](https://docs.astral.sh/uv/), [Ruff](https://docs.astral.sh/ruff/), [Semgrep](https://semgrep.dev/), [TruffleHog](https://github.com/trufflesecurity/trufflehog), [Hadolint](https://github.com/hadolint/hadolint), [Syft](https://github.com/anchore/syft#installation), [Grype](https://github.com/anchore/grype#installation), [yq](https://github.com/mikefarah/yq), [VS Code](https://code.visualstudio.com/), and the [VS Code Extension for Codex](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt). Ruff, Semgrep, TruffleHog, Hadolint, Syft, and Grype are used in Shinobi's development workflow to help identify and reduce security risks introduced by Shinobi itself.
 
 **Again, WSL, VS Code, and Codex are NOT required to use Shinobi. They are only relevant to this Quickstart.**
 
@@ -29,7 +29,7 @@ cd shinobi
 cp src/.env.example src/.env
 ```
 
-**Step 4.** Use `make` and the provided Makefile to build, start, and test the Shinobi MCP server. The default Make target will also download and start the Terraform MCP server maintained by Hashicorp.
+**Step 4.** Use Make and the provided Makefile to build, start, and test the Shinobi MCP server. The default Make target will also download and start the Terraform MCP server maintained by Hashicorp.
 
 ```bash
 make 
