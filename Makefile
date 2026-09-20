@@ -2,51 +2,59 @@
 # Misc.
 # ---------------------------------------------------------
 
-# Use BASH as the default shell.
+# Use Bash as the default shell.
 SHELL := /bin/bash
 
 # Set the default Make target.
-.DEFAULT_GOAL := build-and-start-container
+.DEFAULT_GOAL := tests
+
+# Normalize the workspace path and expose it to Docker Compose.
+WORKSPACE ?= $(CURDIR)
+MCP_SERVER_WORKSPACE := $(abspath $(WORKSPACE))
+export MCP_SERVER_WORKSPACE
 
 # Tell Docker Compose to use Bake for builds.
 export COMPOSE_BAKE := true
 
-# Set the Docker Compose profile to "all" if one is not provided.
+# Set the Docker Compose profile.
 DOCKER_COMPOSE_PROFILE ?= all
 
-# Set the host directory exposed to Shinobi as its workspace.
-WORKSPACE ?= $(CURDIR)
-
-# Normalize the workspace path and expose it to Docker Compose.
-SHINOBI_WORKSPACE := $(abspath $(WORKSPACE))
-export SHINOBI_WORKSPACE
-
-# Centralize the Compose command so every Make target uses the same profile.
+# Centralize the Docker Compose command.
 COMPOSE := docker compose --profile $(DOCKER_COMPOSE_PROFILE)
 
-# Set the Docker Compose service to build and scan.
-SHINOBI_SERVICE := shinobi-mcp
+# Set the Docker Compose service.
+MCP_SERVER := shinobi-mcp
 
-# Set the prefix used for SBOM file names.
-SBOM_PREFIX ?= shinobi
+# Get service configuration from Docker Compose.
+BUILD_CONTEXT := $(shell $(COMPOSE) config --format json | \
+	yq -r '.services."$(MCP_SERVER)".build.context')
+IMAGE_REF := $(shell $(COMPOSE) config --format json | \
+	yq -r '.services."$(MCP_SERVER)".image')
+
+# Set artifact paths.
+DOCKERFILE_PATH := $(BUILD_CONTEXT)/Dockerfile
+SBOM_PATH := $(MCP_SERVER)-sbom.json
+VEX_YAML_PATH := $(BUILD_CONTEXT)/vex.yaml
+VEX_JSON_PATH := $(BUILD_CONTEXT)/vex.json
 
 # Set VEX metadata.
 VEX_AUTHOR ?= Victor Fernandez III
 VEX_ID_BASE ?= shinobi
 
-# Set security scanner thresholds.
+# Set scanner configuration and thresholds.
 SEMGREP_CONFIG ?= auto
+HADOLINT_FAILURE_THRESHOLD ?= warning
 GRYPE_FAILURE_THRESHOLD ?= medium
 
 # ---------------------------------------------------------
-# Validate the workspace folder exists.
+# Validate the workspace directory exists.
 # ---------------------------------------------------------
 
 .PHONY: validate-workspace
 .SILENT: validate-workspace
 validate-workspace:
-	if [ ! -d "$(SHINOBI_WORKSPACE)" ]; then \
-		echo "ERROR: Workspace does not exist: $(SHINOBI_WORKSPACE)" >&2; \
+	if [ ! -d "$(MCP_SERVER_WORKSPACE)" ]; then \
+		echo "ERROR: $(MCP_SERVER_WORKSPACE) does not exist" >&2; \
 		exit 1; \
 	fi
 
@@ -57,26 +65,18 @@ validate-workspace:
 .PHONY: lock
 .SILENT: lock
 lock:
-	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
-	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
-		echo "==> Locking $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
-		(cd "$$BUILD_CONTEXT" && uv lock); \
-	fi
+	echo "[*] Locking $(MCP_SERVER) Python dependencies"
+	cd "$(BUILD_CONTEXT)" && uv lock
 
 # ---------------------------------------------------------
-# Check the source code for bugs.
+# Check the source code for quality.
 # ---------------------------------------------------------
 
 .PHONY: check
 .SILENT: check
 check:
-	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
-	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
-		echo "==> Checking $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
-		ruff check --fix --exclude migrations "$$BUILD_CONTEXT"; \
-	fi
+	echo "[*] Checking $(MCP_SERVER) source code quality"
+	ruff check --fix "$(BUILD_CONTEXT)"
 
 # ---------------------------------------------------------
 # Format the source code.
@@ -85,12 +85,36 @@ check:
 .PHONY: format
 .SILENT: format
 format:
-	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
-	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$BUILD_CONTEXT/pyproject.toml" ]; then \
-		echo "==> Formatting $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
-		ruff format --exclude migrations "$$BUILD_CONTEXT"; \
-	fi
+	echo "[*] Formatting $(MCP_SERVER) source code"
+	ruff format "$(BUILD_CONTEXT)"
+
+# ---------------------------------------------------------
+# Check the repository for secrets.
+# ---------------------------------------------------------
+
+.PHONY: secrets
+.SILENT: secrets
+secrets:
+	echo "[*] Scanning the $(MCP_SERVER) source code for secrets"
+	trufflehog \
+		--no-update \
+		--fail \
+		--fail-on-scan-errors \
+		--results=verified,unknown \
+		--log-level=-1 \
+		git "file://$(MCP_SERVER_WORKSPACE)"
+
+# ---------------------------------------------------------
+# Check the Dockerfile for quality.
+# ---------------------------------------------------------
+
+.PHONY: dockerfile-lint
+.SILENT: dockerfile-lint
+dockerfile-lint:
+	echo "[*] Checking the $(MCP_SERVER) Dockerfile for quality"
+	hadolint \
+		--failure-threshold "$(HADOLINT_FAILURE_THRESHOLD)" \
+		"$(DOCKERFILE_PATH)"
 
 # ---------------------------------------------------------
 # Check the source code for vulnerabilities.
@@ -99,12 +123,8 @@ format:
 .PHONY: sast
 .SILENT: sast
 sast:
-	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
-	if [ -n "$$BUILD_CONTEXT" ] && [ -d "$$BUILD_CONTEXT" ]; then \
-		echo "==> Running SAST on $(SHINOBI_SERVICE) ($$BUILD_CONTEXT)"; \
-		semgrep scan --config $(SEMGREP_CONFIG) "$$BUILD_CONTEXT"; \
-	fi
+	echo "[*] Checking the $(MCP_SERVER) source code for vulnerabilities"
+	semgrep scan --config "$(SEMGREP_CONFIG)" "$(BUILD_CONTEXT)"
 
 # ---------------------------------------------------------
 # Build the container image.
@@ -112,22 +132,20 @@ sast:
 
 .PHONY: build-containers
 .SILENT: build-containers
-build-containers: lock check format
-	$(COMPOSE) build $(SHINOBI_SERVICE)
+build-containers: lock check format secrets dockerfile-lint sast
+	echo "[*] Building the $(MCP_SERVER) container image"
+	$(COMPOSE) build $(MCP_SERVER)
 
 # ---------------------------------------------------------
 # Generate a VEX file for the container image.
 # ---------------------------------------------------------
 
-.PHONY: vex
-.SILENT: vex
-
 define VEX_FILTER
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": $$VEX_ID,
-  "author": $$VEX_AUTHOR,
-  "timestamp": $$VEX_TIMESTAMP,
+  "@id": strenv(VEX_ID),
+  "author": strenv(VEX_AUTHOR),
+  "timestamp": strenv(VEX_TIMESTAMP),
   "version": 1,
   "statements": [
     .advisories[] | {
@@ -149,32 +167,14 @@ endef
 
 export VEX_FILTER
 
+.PHONY: vex
+.SILENT: vex
 vex:
-	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
-	if [ -z "$$BUILD_CONTEXT" ]; then \
-		echo "ERROR: $(SHINOBI_SERVICE) does not define a build context." >&2; \
-		exit 1; \
-	fi; \
-	VEX_YAML_PATH="$$BUILD_CONTEXT/vex.yaml"; \
-	VEX_JSON_PATH="$$BUILD_CONTEXT/vex.json"; \
-	if [ -f "$$VEX_YAML_PATH" ]; then \
-		echo "==> Generating VEX for $(SHINOBI_SERVICE)"; \
-		VEX_ID="$(VEX_ID_BASE)-$(SHINOBI_SERVICE)-$$(date +%s)"; \
-		VEX_TIMESTAMP="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
-		if yq --version 2>&1 | grep -qi 'mikefarah'; then \
-			yq -o=json '.' "$$VEX_YAML_PATH"; \
-		else \
-			yq '.' "$$VEX_YAML_PATH"; \
-		fi | jq \
-			--arg VEX_ID "$$VEX_ID" \
-			--arg VEX_AUTHOR "$(VEX_AUTHOR)" \
-			--arg VEX_TIMESTAMP "$$VEX_TIMESTAMP" \
-			"$$VEX_FILTER" \
-			> "$$VEX_JSON_PATH"; \
-	else \
-		echo "==> No VEX file for $(SHINOBI_SERVICE); skipping"; \
-	fi
+	echo "[*] Generating VEX for $(MCP_SERVER)"
+	VEX_ID="$(VEX_ID_BASE)" \
+	VEX_AUTHOR="$(VEX_AUTHOR)" \
+	VEX_TIMESTAMP="$$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+	yq -o=json "$$VEX_FILTER" "$(VEX_YAML_PATH)" > "$(VEX_JSON_PATH)"
 
 # ---------------------------------------------------------
 # Generate an SBOM for the container image.
@@ -183,15 +183,8 @@ vex:
 .PHONY: sbom
 .SILENT: sbom
 sbom: build-containers
-	IMAGE_REF=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].image // empty'); \
-	SBOM_PATH="$(SBOM_PREFIX)-sbom.json"; \
-	if [ -z "$$IMAGE_REF" ]; then \
-		echo "ERROR: Compose service $(SHINOBI_SERVICE) does not define an image." >&2; \
-		exit 1; \
-	fi; \
-	echo "==> Generating SBOM for $(SHINOBI_SERVICE) ($$IMAGE_REF)"; \
-	syft "$$IMAGE_REF" -o cyclonedx-json="$$SBOM_PATH"
+	echo "[*] Generating SBOM for $(MCP_SERVER)"
+	syft "$(IMAGE_REF)" -o cyclonedx-json="$(SBOM_PATH)"
 
 # ---------------------------------------------------------
 # Scan the container image's dependencies for CVEs.
@@ -200,42 +193,34 @@ sbom: build-containers
 .PHONY: dependency-scan
 .SILENT: dependency-scan
 dependency-scan: sbom vex
+	echo "[*] Updating the Grype vulnerability database"
 	grype db update
-	BUILD_CONTEXT=$$($(COMPOSE) config --format json | \
-		jq -r '.services["$(SHINOBI_SERVICE)"].build.context // empty'); \
-	SBOM_PATH="$(SBOM_PREFIX)-sbom.json"; \
-	VEX_JSON_PATH="$$BUILD_CONTEXT/vex.json"; \
-	echo "==> Scanning dependencies for $(SHINOBI_SERVICE)"; \
-	if [ -n "$$BUILD_CONTEXT" ] && [ -f "$$VEX_JSON_PATH" ]; then \
-		grype sbom:"$$SBOM_PATH" \
-			--vex "$$VEX_JSON_PATH" \
-			--fail-on $(GRYPE_FAILURE_THRESHOLD); \
-	else \
-		grype sbom:"$$SBOM_PATH" \
-			--fail-on $(GRYPE_FAILURE_THRESHOLD); \
-	fi
+	echo "[*] Scanning dependencies for $(MCP_SERVER)"
+	grype sbom:"$(SBOM_PATH)" \
+		--vex "$(VEX_JSON_PATH)" \
+		--fail-on "$(GRYPE_FAILURE_THRESHOLD)"
 
 # ---------------------------------------------------------
-# Build and start the container.
+# Start the containers.
 # ---------------------------------------------------------
 
-.PHONY: build-and-start-container
-.SILENT: build-and-start-container
-build-and-start-container: validate-workspace dependency-scan
-	echo "==> Using workspace: $(SHINOBI_WORKSPACE)"
+.PHONY: start-containers
+.SILENT: start-containers
+start-containers: validate-workspace dependency-scan
+	echo "[*] Using workspace: $(MCP_SERVER_WORKSPACE)"
 	$(COMPOSE) up -d
 
 # ---------------------------------------------------------
-# Stop the container.
+# Stop the containers.
 # ---------------------------------------------------------
 
-.PHONY: stop-container
-.SILENT: stop-container
-stop-container:
+.PHONY: stop-containers
+.SILENT: stop-containers
+stop-containers:
 	$(COMPOSE) down
 
 # ---------------------------------------------------------
-# Check the status of the container.
+# Check the status of the containers.
 # ---------------------------------------------------------
 
 .PHONY: status
@@ -244,10 +229,11 @@ status:
 	$(COMPOSE) ps --format "table {{.Name}}\t{{.Ports}}\t{{.Status}}"
 
 # ---------------------------------------------------------
-# Test the container.
+# Test the containers.
 # ---------------------------------------------------------
 
 .PHONY: tests
 .SILENT: tests
-tests:
+tests: start-containers
+	echo "[*] Running tests for $(MCP_SERVER)"
 	cd tests && uv run python main.py

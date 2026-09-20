@@ -1,4 +1,5 @@
 # `shinobi`
+[![CI Pipeline](https://github.com/deathlabs/shinobi/actions/workflows/ci.yml/badge.svg)](https://github.com/deathlabs/shinobi/actions/workflows/ci.yml)  
 
 Shinobi is an MCP server that exposes tools and skills that agents can use to evaluate cloud-native platforms for compliance with applicable Security Requirements Guides (SRGs) and Security Technical Implementation Guides (STIGs).
 
@@ -28,22 +29,16 @@ cd shinobi
 cp src/.env.example src/.env
 ```
 
-**Step 4.** Use `make` and the provided Makefile to build and start the Shinobi MCP server. The default Make target will also download and start the Terraform MCP server maintained by Hashicorp.
+**Step 4.** Use `make` and the provided Makefile to build, start, and test the Shinobi MCP server. The default Make target will also download and start the Terraform MCP server maintained by Hashicorp.
 
 ```bash
 make 
 ```
 
-**Step 5.** Run the command below to verify the Shinobi MCP server is running as expected. 
+**Step 5.** Enable **Run Codex In Windows Subsystem For Linux** inside your VS Code extension settings.
 
-```bash
-make tests
-```
+**Step 6.** Open the repository in VS Code. The Shinobi repository includes a Codex agent definition for `compliance_analyst` under `.codex/agents/`. 
 
-**Step 6.** Enable **Run Codex In Windows Subsystem For Linux** inside your VS Code extension settings.
-
-**Step 7.** Open the repository in VS Code. The Shinobi repository includes a Codex agent definition for `compliance_analyst` under `.codex/agents/`. 
-
-**Step 8.** Give Codex a prompt similar to the one below.
+**Step 7.** Give Codex a prompt similar to the one below.
 
 > Have `compliance_analyst` evaluate the Application Layer Gateway (ALG) Terraform module in `examples/modules/` for compliance with the ALG Security Requirements Guide (SRG) in `examples/benchmarks/`. Then, generate a SRG checklist and save it under `examples/checklists/`.

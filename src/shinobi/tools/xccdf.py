@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import TypedDict
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
 
 
 class Requirement(TypedDict):
